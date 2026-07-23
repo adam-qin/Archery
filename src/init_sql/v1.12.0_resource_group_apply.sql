@@ -29,3 +29,30 @@ ON DUPLICATE KEY UPDATE `name`='申请资源组权限';
 INSERT INTO `auth_permission` (`name`, `content_type_id`, `codename`)
 SELECT '审核资源组权限', `id`, 'resource_group_review' FROM `django_content_type` WHERE `app_label`='sql' AND `model`='permission'
 ON DUPLICATE KEY UPDATE `name`='审核资源组权限';
+
+-- 3. 将菜单权限赋予 Default 组（保证新用户能看到该菜单）
+--    已加入对应权限组的用户可跳过此步
+INSERT IGNORE INTO `auth_group_permissions` (`group_id`, `permission_id`)
+SELECT g.id, p.id FROM `auth_group` g
+JOIN `auth_permission` p ON p.codename IN (
+    'menu_resourcegroupapplylist', 'resource_group_apply'
+)
+WHERE g.name = 'Default';
+
+-- 4. 给其他默认组（RD/DBA/PM/QA）也赋予对应权限
+INSERT IGNORE INTO `auth_group_permissions` (`group_id`, `permission_id`)
+SELECT g.id, p.id FROM `auth_group` g
+JOIN `auth_permission` p ON p.codename = 'menu_resourcegroupapplylist'
+WHERE g.name IN ('RD', 'DBA', 'PM', 'QA');
+
+-- 普通用户可申请
+INSERT IGNORE INTO `auth_group_permissions` (`group_id`, `permission_id`)
+SELECT g.id, p.id FROM `auth_group` g
+JOIN `auth_permission` p ON p.codename = 'resource_group_apply'
+WHERE g.name IN ('RD', 'PM', 'QA');
+
+-- DBA/PM 可审核
+INSERT IGNORE INTO `auth_group_permissions` (`group_id`, `permission_id`)
+SELECT g.id, p.id FROM `auth_group` g
+JOIN `auth_permission` p ON p.codename = 'resource_group_review'
+WHERE g.name IN ('DBA', 'PM');
