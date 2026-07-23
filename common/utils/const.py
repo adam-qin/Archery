@@ -7,6 +7,7 @@ class Const(object):
         "query": "query",
         "sqlreview": "sqlreview",
         "archive": "archive",
+        "resourcegroup": "resourcegroup",
     }
 
 
@@ -14,6 +15,7 @@ class WorkflowType(models.IntegerChoices):
     QUERY = 1, "查询权限申请"
     SQL_REVIEW = 2, "SQL上线申请"
     ARCHIVE = 3, "数据归档申请"
+    RESOURCE_GROUP = 4, "资源组权限申请"
 
 
 class WorkflowStatus(models.IntegerChoices):

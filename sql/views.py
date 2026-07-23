@@ -23,6 +23,7 @@ from .models import (
     QueryPrivileges,
     ResourceGroup,
     QueryPrivilegesApply,
+    ResourceGroupApply,
     Config,
     SQL_WORKFLOW_CHOICES,
     InstanceTag,
@@ -40,7 +41,7 @@ from sql.utils.sql_review import (
     can_view,
     can_rollback,
 )
-from common.utils.const import Const, WorkflowType, WorkflowAction
+from common.utils.const import Const, WorkflowType, WorkflowAction, WorkflowStatus
 from sql.utils.resource_group import user_groups, user_instances
 
 import logging
@@ -407,6 +408,57 @@ def queryuserprivileges(request):
     return render(request, "queryuserprivileges.html", context)
 
 
+@permission_required("sql.menu_resourcegroupapplylist", raise_exception=True)
+def resourcegroupapplylist(request):
+    """资源组权限申请列表页面"""
+    group_list = ResourceGroup.objects.filter(is_deleted=0)
+    user = request.user
+    user_group_ids = [g.group_id for g in user_groups(user)]
+    context = {"group_list": group_list, "user_group_ids": user_group_ids}
+    return render(request, "resourcegroupapplylist.html", context)
+
+
+def resourcegroupapplydetail(request, apply_id):
+    """资源组权限申请详情页面"""
+    workflow_detail = ResourceGroupApply.objects.get(apply_id=apply_id)
+    audit_handler = AuditV2(workflow=workflow_detail)
+    review_info = audit_handler.get_review_info()
+
+    is_can_review = Audit.can_review(request.user, apply_id, 4)
+
+    if workflow_detail.status in (WorkflowStatus.REJECTED, WorkflowStatus.PASSED):
+        try:
+            audit_id = Audit.detail_by_workflow_id(
+                workflow_id=apply_id, workflow_type=4
+            ).audit_id
+            last_operation_info = (
+                Audit.logs(audit_id=audit_id).latest("id").operation_info
+            )
+        except Exception as e:
+            logger.debug(f"无审核日志记录，错误信息{e}")
+            last_operation_info = ""
+    else:
+        last_operation_info = ""
+
+    current_reviewers = []
+    for node in review_info.nodes:
+        if not node.is_current_node:
+            continue
+        for user in node.group.user_set.filter(is_active=1):
+            group_names = [g.group_name for g in user_groups(user)]
+            if workflow_detail.group_name in group_names:
+                current_reviewers.append(user)
+
+    context = {
+        "workflow_detail": workflow_detail,
+        "current_reviewers": current_reviewers,
+        "review_info": review_info,
+        "last_operation_info": last_operation_info,
+        "is_can_review": is_can_review,
+    }
+    return render(request, "resourcegroupapplydetail.html", context)
+
+
 @permission_required("sql.menu_sqladvisor", raise_exception=True)
 def sqladvisor(request):
     """SQL优化工具页面"""
@@ -605,6 +657,10 @@ def workflowsdetail(request, audit_id):
     elif audit_detail.workflow_type == WorkflowType.ARCHIVE:
         return HttpResponseRedirect(
             reverse("sql:archive_detail", args=(audit_detail.workflow_id,))
+        )
+    elif audit_detail.workflow_type == WorkflowType.RESOURCE_GROUP:
+        return HttpResponseRedirect(
+            reverse("sql:resourcegroupapplydetail", args=(audit_detail.workflow_id,))
         )
 
 

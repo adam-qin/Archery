@@ -23,6 +23,7 @@ from sql.models import (
     ResourceGroup,
     SqlWorkflow,
     QueryPrivilegesApply,
+    ResourceGroupApply,
     Users,
     ArchiveConfig,
 )
@@ -399,6 +400,8 @@ class AuditV2:
             need_user_permission = "sql.sql_review"
         elif self.workflow_type == WorkflowType.ARCHIVE:
             need_user_permission = "sql.archive_review"
+        elif self.workflow_type == WorkflowType.RESOURCE_GROUP:
+            need_user_permission = "sql.resource_group_review"
         else:
             raise AuditException(f"不支持的工单类型: {self.workflow_type}")
 
@@ -722,6 +725,9 @@ class Audit(object):
                 user = workflow.engineer
             elif workflow_type == 3:
                 workflow = ArchiveConfig.objects.get(id=workflow_id)
+                user = workflow.user_name
+            elif workflow_type == 4:
+                workflow = ResourceGroupApply.objects.get(apply_id=workflow_id)
                 user = workflow.user_name
             return user
 

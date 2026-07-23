@@ -6,6 +6,7 @@ from django.views.i18n import JavaScriptCatalog
 import sql.instance_database
 import sql.query_privileges
 import sql.sql_optimize
+import sql.resource_group_apply
 from common import auth, config, workflow, dashboard, check
 from common.twofa import totp
 from sql import (
@@ -58,6 +59,12 @@ urlpatterns = [
         name="queryapplydetail",
     ),
     path("queryuserprivileges/", views.queryuserprivileges),
+    path("resourcegroupapplylist/", views.resourcegroupapplylist),
+    path(
+        "resourcegroupapplydetail/<int:apply_id>/",
+        views.resourcegroupapplydetail,
+        name="resourcegroupapplydetail",
+    ),
     path("dbdiagnostic/", views.dbdiagnostic),
     path("workflow/", views.workflows),
     path("workflow/<int:audit_id>/", views.workflowsdetail),
@@ -135,6 +142,9 @@ urlpatterns = [
     path("query/applyforprivileges/", sql.query_privileges.query_priv_apply),
     path("query/modifyprivileges/", sql.query_privileges.query_priv_modify),
     path("query/privaudit/", sql.query_privileges.query_priv_audit),
+    path("resourcegroup/applylist/", sql.resource_group_apply.resource_group_apply_list),
+    path("resourcegroup/apply/", sql.resource_group_apply.resource_group_apply),
+    path("resourcegroup/audit/", sql.resource_group_apply.resource_group_audit),
     path("binlog/list/", binlog.binlog_list),
     path("binlog/my2sql/", binlog.my2sql),
     path("binlog/del_log/", binlog.del_binlog),

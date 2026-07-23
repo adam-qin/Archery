@@ -134,6 +134,11 @@
                                         <a href="/queryapplylist/">权限管理</a>
                                     </li>
                                 {% endif %}
+                                {% if perms.sql.menu_resourcegroupapplylist %}
+                                    <li>
+                                        <a href="/resourcegroupapplylist/">资源权限申请</a>
+                                    </li>
+                                {% endif %}
 
                             </ul>
                             <!-- /.nav-second-level -->
