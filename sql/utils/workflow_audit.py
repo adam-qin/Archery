@@ -157,6 +157,9 @@ class AuditV2:
         elif isinstance(self.workflow, QueryPrivilegesApply):
             self.resource_group = self.workflow.group_name
             self.resource_group_id = self.workflow.group_id
+        elif isinstance(self.workflow, ResourceGroupApply):
+            self.resource_group = self.workflow.group_name
+            self.resource_group_id = self.workflow.group_id
         # 该方法可能获取不到相关的审批流, 但是也不要报错, 因为有的时候是新建工单, 此时还没有审批流
         self.get_audit_info()
         # 防止 get_auditor 显式的传了个 None
@@ -268,7 +271,7 @@ class AuditV2:
         return True
 
     def generate_audit_setting(self) -> AuditSetting:
-        if self.workflow_type in [WorkflowType.SQL_REVIEW, WorkflowType.QUERY]:
+        if self.workflow_type in [WorkflowType.SQL_REVIEW, WorkflowType.QUERY, WorkflowType.RESOURCE_GROUP]:
             group_id = self.workflow.group_id
         else:
             # ArchiveConfig
@@ -312,6 +315,13 @@ class AuditV2:
             workflow_title = self.workflow.title
             group_id = self.resource_group_id
             group_name = self.resource_group
+            create_user = self.workflow.user_name
+            create_user_display = self.workflow.user_display
+            self.workflow.audit_auth_groups = audit_setting.audit_auth_group_in_db
+        elif self.workflow_type == WorkflowType.RESOURCE_GROUP:
+            workflow_title = self.workflow.title
+            group_id = self.workflow.group_id
+            group_name = self.workflow.group_name
             create_user = self.workflow.user_name
             create_user_display = self.workflow.user_display
             self.workflow.audit_auth_groups = audit_setting.audit_auth_group_in_db
