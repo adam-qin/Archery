@@ -2,7 +2,7 @@
 -- 对应版本: v1.12.0-resource-group-apply
 
 -- 1. 新建 resource_group_apply 表
-CREATE TABLE `resource_group_apply` (
+CREATE TABLE IF NOT EXISTS `resource_group_apply` (
   `apply_id` int NOT NULL AUTO_INCREMENT,
   `group_id` int NOT NULL COMMENT '组ID',
   `group_name` varchar(100) NOT NULL COMMENT '组名称',
@@ -45,11 +45,11 @@ SELECT g.id, p.id FROM `auth_group` g
 JOIN `auth_permission` p ON p.codename = 'menu_resourcegroupapplylist'
 WHERE g.name IN ('RD', 'DBA', 'PM', 'QA');
 
--- 普通用户可申请
+-- 普通用户和 DBA 均可提交申请，避免只有菜单权限但提交接口 403
 INSERT IGNORE INTO `auth_group_permissions` (`group_id`, `permission_id`)
 SELECT g.id, p.id FROM `auth_group` g
 JOIN `auth_permission` p ON p.codename = 'resource_group_apply'
-WHERE g.name IN ('RD', 'PM', 'QA');
+WHERE g.name IN ('RD', 'DBA', 'PM', 'QA');
 
 -- DBA/PM 可审核
 INSERT IGNORE INTO `auth_group_permissions` (`group_id`, `permission_id`)

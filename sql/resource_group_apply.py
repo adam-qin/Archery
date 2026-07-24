@@ -75,19 +75,23 @@ def resource_group_apply(request):
     提交资源组权限申请
     """
     title = request.POST.get("title")
+    group_id = request.POST.get("group_id")
     group_name = request.POST.get("group_name")
     apply_remark = request.POST.get("apply_remark", "")
 
     user = request.user
     result = {"status": 0, "msg": "ok", "data": []}
 
-    if not title or not group_name:
+    if not title or not (group_id or group_name):
         result["status"] = 1
         result["msg"] = "请填写完整申请信息"
         return HttpResponse(json.dumps(result), content_type="application/json")
 
     try:
-        group_obj = ResourceGroup.objects.get(group_name=group_name, is_deleted=0)
+        if group_id:
+            group_obj = ResourceGroup.objects.get(group_id=group_id, is_deleted=0)
+        else:
+            group_obj = ResourceGroup.objects.get(group_name=group_name, is_deleted=0)
     except ResourceGroup.DoesNotExist:
         result["status"] = 1
         result["msg"] = "资源组不存在"

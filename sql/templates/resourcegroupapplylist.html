@@ -29,17 +29,15 @@
                         <input type="text" autocomplete="off" class="form-control" id="title" placeholder="简单说明申请用途">
                     </div>
                     <div class="form-group">
-                        <select id="group_name" name="group_name"
+                        <select id="group_name" name="group_id"
                                 class="selectpicker show-tick form-control bs-select-hidden"
                                 title="请选择资源组:"
                                 data-live-search="true" required>
-                            {% for group in group_list %}
-                                {% if group.group_id|stringformat:"s" not in user_group_ids_str %}
-                                    <option value="{{ group.group_name }}">{{ group.group_name }}</option>
-                                {% endif %}
+                            {% for group in applyable_group_list %}
+                                <option value="{{ group.group_id }}">{{ group.group_name }}</option>
                             {% endfor %}
                         </select>
-                        {% if not group_list %}
+                        {% if not applyable_group_list %}
                             <span class="help-block text-warning">当前没有可申请的资源组，请联系管理员创建。</span>
                         {% endif %}
                     </div>
@@ -91,7 +89,7 @@
                 url: "/group/auditors/",
                 dataType: "json",
                 data: {
-                    group_name: $("#group_name").val(),
+                    group_id: $("#group_name").val(),
                     workflow_type: 4
                 },
                 complete: function () {
@@ -209,10 +207,10 @@
         //提交参数校验
         function applyvalidate() {
             var title = $("#title").val();
-            var group_name = $("#group_name").val();
+            var group_id = $("#group_name").val();
             var workflow_auditors = $("#workflow_auditors").val();
 
-            if (title && group_name && workflow_auditors) {
+            if (title && group_id && workflow_auditors) {
                 return true
             } else {
                 alert("信息填写不完整，或者未配置审批流程");
@@ -223,7 +221,7 @@
         //提交资源组权限申请
         function applyForResourceGroup() {
             var title = $("#title").val();
-            var group_name = $("#group_name").val();
+            var group_id = $("#group_name").val();
             var apply_remark = $("#apply_remark").val();
             var workflow_auditors = $("#workflow_auditors").val();
 
@@ -236,7 +234,7 @@
                     dataType: "json",
                     data: {
                         title: title,
-                        group_name: group_name,
+                        group_id: group_id,
                         apply_remark: apply_remark,
                         workflow_auditors: workflow_auditors
                     },

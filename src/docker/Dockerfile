@@ -9,7 +9,13 @@ RUN useradd nginx \
     && apt-get clean \
     && rm -rf /var/cache/apt/*
 
-# ---- Layer 2: Python 依赖安装（仅 requirements.txt 变化时重建） ----
+# ---- Layer 2: 稳定二进制工具迁移（来自 base 镜像，仅基础镜像变化时重建） ----
+RUN mkdir -p /opt/archery/src/plugins \
+    && mv /opt/sqladvisor /opt/archery/src/plugins/ \
+    && mv /opt/soar /opt/archery/src/plugins/ \
+    && mv /opt/my2sql /opt/archery/src/plugins/
+
+# ---- Layer 3: Python 依赖安装（仅 requirements.txt 变化时重建） ----
 ARG HTTP_PROXY=""
 ARG HTTPS_PROXY=""
 COPY requirements.txt /opt/archery/requirements.txt
@@ -28,23 +34,18 @@ RUN source venv4archery/bin/activate \
         pip install --no-cache-dir -r /opt/archery/requirements.txt; \
     fi
 
-# ---- Layer 3: 基础设施配置（仅 nginx/supervisor 配置变化时重建） ----
-COPY src/docker/nginx.conf /etc/nginx/nginx.conf
-COPY src/docker/supervisord.conf /etc/supervisord.conf
-
-# ---- Layer 4: 应用代码 ----
-COPY . /opt/archery/
-
-# ---- Layer 5: 二进制工具迁移（来自 base 镜像，几乎不变） ----
-RUN mv /opt/sqladvisor /opt/archery/src/plugins/ \
-    && mv /opt/soar /opt/archery/src/plugins/ \
-    && mv /opt/my2sql /opt/archery/src/plugins/
-
-# 清理编译工具（放在最后一步，不影响上层缓存）
+# ---- Layer 4: 清理编译工具（依赖安装后执行，避免应用代码变化触发重建） ----
 RUN apt-get -yq remove gcc curl \
     && apt-get autoremove -yq \
     && apt-get clean \
     && rm -rf /var/cache/apt/* /var/lib/apt/lists/* /root/.cache
+
+# ---- Layer 5: 基础设施配置（仅 nginx/supervisor 配置变化时重建） ----
+COPY src/docker/nginx.conf /etc/nginx/nginx.conf
+COPY src/docker/supervisord.conf /etc/supervisord.conf
+
+# ---- Layer 6: 应用代码（变动最频繁，尽量后置） ----
+COPY . /opt/archery/
 
 WORKDIR /opt/
 

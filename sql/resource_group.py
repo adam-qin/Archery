@@ -196,6 +196,7 @@ def addrelation(request):
 
 def auditors(request):
     """获取资源组的审批流程"""
+    group_id = request.POST.get("group_id")
     group_name = request.POST.get("group_name")
     workflow_type = request.POST["workflow_type"]
     result = {
@@ -203,14 +204,26 @@ def auditors(request):
         "msg": "ok",
         "data": {"auditors": "", "auditors_display": ""},
     }
-    if group_name:
-        group_id = ResourceGroup.objects.get(group_name=group_name).group_id
+    try:
+        if group_id:
+            group_id = ResourceGroup.objects.get(group_id=group_id, is_deleted=0).group_id
+        elif group_name:
+            group_id = ResourceGroup.objects.get(group_name=group_name, is_deleted=0).group_id
+        else:
+            result["status"] = 1
+            result["msg"] = "参数错误"
+            return HttpResponse(json.dumps(result), content_type="application/json")
         audit_auth_groups = Audit.settings(
             group_id=group_id, workflow_type=workflow_type
         )
-    else:
+    except ResourceGroup.DoesNotExist:
         result["status"] = 1
-        result["msg"] = "参数错误"
+        result["msg"] = "资源组不存在"
+        return HttpResponse(json.dumps(result), content_type="application/json")
+
+    if not audit_auth_groups:
+        result["status"] = 1
+        result["msg"] = "当前资源组未配置审批流程，请联系管理员在资源组管理中配置资源组权限申请审批流程"
         return HttpResponse(json.dumps(result), content_type="application/json")
 
     # 获取权限组名称

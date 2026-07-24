@@ -414,7 +414,14 @@ def resourcegroupapplylist(request):
     group_list = ResourceGroup.objects.filter(is_deleted=0)
     user = request.user
     user_group_ids_str = [str(g.group_id) for g in user_groups(user)]
-    context = {"group_list": group_list, "user_group_ids_str": user_group_ids_str}
+    applyable_group_list = [
+        group for group in group_list if str(group.group_id) not in user_group_ids_str
+    ]
+    context = {
+        "group_list": group_list,
+        "applyable_group_list": applyable_group_list,
+        "user_group_ids_str": user_group_ids_str,
+    }
     return render(request, "resourcegroupapplylist.html", context)
 
 
