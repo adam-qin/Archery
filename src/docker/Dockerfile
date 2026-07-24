@@ -26,8 +26,7 @@ RUN source venv4archery/bin/activate \
             --proxy "$HTTP_PROXY" -r /opt/archery/requirements.txt; \
     else \
         pip install --no-cache-dir -r /opt/archery/requirements.txt; \
-    fi \
-    && pip install --no-cache-dir "redis>=4.1.0"
+    fi
 
 # ---- Layer 3: 基础设施配置（仅 nginx/supervisor 配置变化时重建） ----
 COPY src/docker/nginx.conf /etc/nginx/nginx.conf
