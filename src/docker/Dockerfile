@@ -32,13 +32,13 @@ RUN source venv4archery/bin/activate \
 COPY src/docker/nginx.conf /etc/nginx/nginx.conf
 COPY src/docker/supervisord.conf /etc/supervisord.conf
 
-# ---- Layer 4: 二进制工具迁移（来自 base 镜像，几乎不变） ----
+# ---- Layer 4: 应用代码 ----
+COPY . /opt/archery/
+
+# ---- Layer 5: 二进制工具迁移（来自 base 镜像，几乎不变） ----
 RUN mv /opt/sqladvisor /opt/archery/src/plugins/ \
     && mv /opt/soar /opt/archery/src/plugins/ \
     && mv /opt/my2sql /opt/archery/src/plugins/
-
-# ---- Layer 5: 应用代码（变化最频繁，放在最后） ----
-COPY . /opt/archery/
 
 # 清理编译工具（放在最后一步，不影响上层缓存）
 RUN apt-get -yq remove gcc curl \
