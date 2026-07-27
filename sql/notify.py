@@ -24,6 +24,7 @@ from sql.models import (
     WorkflowAudit,
     WorkflowAuditDetail,
     SqlWorkflowContent,
+    ResourcePermissionApply,
 )
 from sql.utils.resource_group import auth_group_users
 from sql.utils.workflow_audit import Audit, AuditV2
@@ -33,6 +34,7 @@ from sql_api.serializers import (
     QueryPrivilegesApplySerializer,
     ArchiveConfigSerializer,
     InstanceSerializer,
+    ResourcePermissionApplySerializer,
 )
 
 logger = logging.getLogger("default")
@@ -54,9 +56,13 @@ class My2SqlResult:
 
 @dataclass
 class Notifier:
-    workflow: Union[SqlWorkflow, ArchiveConfig, QueryPrivilegesApply, My2SqlResult] = (
-        None
-    )
+    workflow: Union[
+        SqlWorkflow,
+        ArchiveConfig,
+        QueryPrivilegesApply,
+        ResourcePermissionApply,
+        My2SqlResult,
+    ] = None
     sys_config: SysConfig = None
     # init false, class property, 不是 instance property
     name: str = field(init=False, default="base")
@@ -116,6 +122,10 @@ class GenericWebhookNotifier(Notifier):
             ).data
         elif isinstance(self.workflow, QueryPrivilegesApply):
             self.request_data["workflow_content"] = QueryPrivilegesApplySerializer(
+                self.workflow
+            ).data
+        elif isinstance(self.workflow, ResourcePermissionApply):
+            self.request_data["workflow_content"] = ResourcePermissionApplySerializer(
                 self.workflow
             ).data
         else:
@@ -193,6 +203,15 @@ class LegacyRender(Notifier):
                 workflow_detail.src_table_name,
                 workflow_detail.mode,
                 workflow_detail.condition,
+            )
+        elif workflow_type == WorkflowType.RESOURCE_PERMISSION:
+            workflow_type_display = WorkflowType.RESOURCE_PERMISSION.label
+            workflow_detail = ResourcePermissionApply.objects.get(pk=workflow_id)
+            instance = "-"
+            db_name = "-"
+            workflow_content = """目标资源组：{}\n申请理由：{}\n""".format(
+                workflow_detail.group_name,
+                workflow_detail.reason,
             )
         else:
             raise Exception("工单类型不正确")
@@ -477,7 +496,11 @@ class MailNotifier(LegacyRender):
 def auto_notify(
     sys_config: SysConfig,
     workflow: Union[
-        SqlWorkflow, ArchiveConfig, QueryPrivilegesApply, My2SqlResult
+        SqlWorkflow,
+        ArchiveConfig,
+        QueryPrivilegesApply,
+        ResourcePermissionApply,
+        My2SqlResult,
     ] = None,
     audit: WorkflowAudit = None,
     audit_detail: WorkflowAuditDetail = None,
@@ -512,6 +535,21 @@ def notify_for_execute(workflow: SqlWorkflow, sys_config: SysConfig = None):
     if not sys_config:
         sys_config = SysConfig()
     auto_notify(workflow=workflow, sys_config=sys_config, event_type=EventType.EXECUTE)
+
+
+def notify_for_resource_permission(
+    workflow_audit: WorkflowAudit,
+    workflow_audit_detail: WorkflowAuditDetail = None,
+):
+    """资源权限申请专用通知入口，保持独立业务语义。"""
+    sys_config = SysConfig()
+    auto_notify(
+        workflow=None,
+        audit=workflow_audit,
+        audit_detail=workflow_audit_detail,
+        sys_config=sys_config,
+        event_type=EventType.AUDIT,
+    )
 
 
 def notify_for_audit(

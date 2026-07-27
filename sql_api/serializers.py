@@ -11,6 +11,7 @@ from sql.models import (
     WorkflowAudit,
     WorkflowLog,
     QueryPrivilegesApply,
+    ResourcePermissionApply,
     ArchiveConfig,
 )
 from django.contrib.auth.models import Group
@@ -254,6 +255,13 @@ class QueryPrivilegesApplySerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+class ResourcePermissionApplySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ResourcePermissionApply
+        fields = ("apply_id", "group_id", "group_name", "title", "reason", "user_name", "user_display", "status", "audit_auth_groups", "create_time", "sys_time")
+        read_only_fields = ("apply_id", "group_name", "user_name", "user_display", "status", "audit_auth_groups", "create_time", "sys_time")
+
+
 class ArchiveConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = ArchiveConfig
@@ -443,24 +451,21 @@ class WorkflowContentSerializer(serializers.ModelSerializer):
 
 
 class AuditWorkflowSerializer(serializers.Serializer):
-    engineer = serializers.CharField(label="操作用户")
+    engineer = serializers.CharField(label="操作用户", required=False)
     workflow_id = serializers.IntegerField(label="工单id")
     audit_remark = serializers.CharField(label="审批备注")
     workflow_type = serializers.ChoiceField(
         choices=WorkflowType.choices,
-        label="工单类型：1-查询权限申请，2-SQL上线申请，3-数据归档申请",
+        label="工单类型：1-查询权限申请，2-SQL上线申请，3-数据归档申请，4-资源权限申请",
     )
-    audit_type = serializers.ChoiceField(choices=["pass", "cancel"], label="审核类型")
+    audit_type = serializers.ChoiceField(
+        choices=["pass", "reject", "cancel"],
+        label="审核类型",
+    )
 
     def validate(self, attrs):
-        engineer = attrs.get("engineer")
         workflow_id = attrs.get("workflow_id")
         workflow_type = attrs.get("workflow_type")
-
-        try:
-            Users.objects.get(username=engineer)
-        except Users.DoesNotExist:
-            raise serializers.ValidationError({"errors": f"不存在该用户：{engineer}"})
 
         try:
             WorkflowAudit.objects.get(
@@ -473,14 +478,7 @@ class AuditWorkflowSerializer(serializers.Serializer):
 
 
 class WorkflowAuditSerializer(serializers.Serializer):
-    engineer = serializers.CharField(label="操作用户")
-
-    def validate_engineer(self, engineer):
-        try:
-            Users.objects.get(username=engineer)
-        except Users.DoesNotExist:
-            raise serializers.ValidationError({"errors": f"不存在该用户：{engineer}"})
-        return engineer
+    engineer = serializers.CharField(label="操作用户", required=False)
 
 
 class WorkflowAuditListSerializer(serializers.ModelSerializer):
@@ -499,8 +497,8 @@ class WorkflowAuditListSerializer(serializers.ModelSerializer):
 class WorkflowLogSerializer(serializers.Serializer):
     workflow_id = serializers.IntegerField(label="工单id")
     workflow_type = serializers.ChoiceField(
-        choices=[1, 2, 3],
-        label="工单类型：1-查询权限申请，2-SQL上线申请，3-数据归档申请",
+        choices=WorkflowType.values,
+        label="工单类型：1-查询权限申请，2-SQL上线申请，3-数据归档申请，4-资源权限申请",
     )
 
     def validate(self, attrs):

@@ -22,9 +22,17 @@ from sql.models import (
     WorkflowLog,
     ArchiveConfig,
     QueryPrivilegesApply,
+    ResourcePermissionApply,
 )
-from sql.notify import notify_for_audit, notify_for_execute
+from sql.notify import (
+    notify_for_audit,
+    notify_for_execute,
+    notify_for_resource_permission,
+)
 from sql.query_privileges import _query_apply_audit_call_back
+from sql.resource_permission import (
+    resource_permission_audit_callback,
+)
 from sql.utils.resource_group import user_groups
 from sql.utils.sql_review import can_cancel, can_execute, on_correct_time_period
 from sql.utils.tasks import del_schedule
@@ -211,8 +219,10 @@ class WorkflowAuditList(generics.ListAPIView):
 
 class AuditWorkflow(views.APIView):
     """
-    审核workflow，包括查询权限申请、SQL上线申请、数据归档申请
+    审核workflow，包括查询权限、SQL上线、数据归档和资源权限申请
     """
+
+    permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
         summary="审核工单",
@@ -231,27 +241,48 @@ class AuditWorkflow(views.APIView):
         )
         sys_config = SysConfig()
         auditor = get_auditor(audit=workflow_audit)
-        user = Users.objects.get(username=serializer.data["engineer"])
+        user = request.user
+        if not user.is_authenticated:
+            raise serializers.ValidationError({"errors": "请先登录"})
+        if serializer.data.get("engineer") not in (None, "", user.username):
+            raise serializers.ValidationError({"errors": "操作用户必须是当前登录用户"})
         if serializer.data["audit_type"] == "pass":
             action = WorkflowAction.PASS
             notify_config_key = "Pass"
             success_message = "passed"
+        elif serializer.data["audit_type"] == "reject":
+            action = WorkflowAction.REJECT
+            notify_config_key = "Cancel"
+            success_message = "rejected"
         elif serializer.data["audit_type"] == "cancel":
             notify_config_key = "Cancel"
             success_message = "canceled"
-            if auditor.workflow.engineer == serializer.data["engineer"]:
+            applicant = getattr(
+                auditor.workflow, "engineer", None
+            ) or getattr(auditor.workflow, "user_name", None)
+            if applicant == user.username:
                 action = WorkflowAction.ABORT
             else:
                 raise serializers.ValidationError({"errors": "用户无权操作此工单"})
         else:
             raise serializers.ValidationError(
-                {"errors": "audit_type 只能是 pass 或 cancel"}
+                {"errors": "audit_type 只能是 pass、reject 或 cancel"}
             )
 
         try:
-            workflow_audit_detail = auditor.operate(
-                action, user, serializer.data["audit_remark"]
-            )
+            with transaction.atomic():
+                locked_audit = WorkflowAudit.objects.select_for_update().get(
+                    pk=workflow_audit.pk
+                )
+                auditor = get_auditor(audit=locked_audit)
+                workflow_audit_detail = auditor.operate(
+                    action, user, serializer.data["audit_remark"]
+                )
+                if auditor.workflow_type == WorkflowType.RESOURCE_PERMISSION:
+                    resource_permission_audit_callback(
+                        auditor.audit.workflow_id,
+                        auditor.audit.current_status,
+                    )
         except AuditException as e:
             raise serializers.ValidationError({"errors": f"操作失败, {str(e)}"})
 
@@ -274,6 +305,8 @@ class AuditWorkflow(views.APIView):
                     # 将流程状态修改为人工终止流程
                 auditor.workflow.status = "workflow_abort"
                 auditor.workflow.save(update_fields=["status"])
+        elif auditor.workflow_type == WorkflowType.RESOURCE_PERMISSION:
+            pass
         elif auditor.workflow_type == WorkflowType.ARCHIVE:
             auditor.workflow.status = auditor.audit.current_status
             if auditor.audit.current_status == WorkflowStatus.PASSED:
@@ -290,7 +323,11 @@ class AuditWorkflow(views.APIView):
         )
         if is_notified:
             async_task(
-                notify_for_audit,
+                (
+                    notify_for_resource_permission
+                    if auditor.workflow_type == WorkflowType.RESOURCE_PERMISSION
+                    else notify_for_audit
+                ),
                 workflow_audit=auditor.audit,
                 workflow_audit_detail=workflow_audit_detail,
                 timeout=60,

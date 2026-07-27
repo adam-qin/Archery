@@ -5,6 +5,7 @@ from django.views.i18n import JavaScriptCatalog
 
 import sql.instance_database
 import sql.query_privileges
+import sql.resource_permission
 import sql.sql_optimize
 from common import auth, config, workflow, dashboard, check
 from common.twofa import totp
@@ -52,6 +53,12 @@ urlpatterns = [
     path("sqladvisor/", views.sqladvisor),
     path("slowquery_advisor/", views.sqladvisor),
     path("queryapplylist/", views.queryapplylist),
+    path("resourcepermission/", views.resource_permission),
+    path(
+        "resourcepermission/<int:apply_id>/",
+        views.resource_permission_detail,
+        name="resource_permission_detail",
+    ),
     path(
         "queryapplydetail/<int:apply_id>/",
         views.queryapplydetail,
@@ -131,6 +138,9 @@ urlpatterns = [
     path("check/openai/", query.check_openai),
     path("query/explain/", sql.sql_optimize.explain),
     path("query/applylist/", sql.query_privileges.query_priv_apply_list),
+    path("resource-permission/groups/", sql.resource_permission.resource_group_list),
+    path("resource-permission/apply-list/", sql.resource_permission.resource_permission_apply_list),
+    path("resource-permission/apply/", sql.resource_permission.resource_permission_apply),
     path("query/userprivileges/", sql.query_privileges.user_query_priv),
     path("query/applyforprivileges/", sql.query_privileges.query_priv_apply),
     path("query/modifyprivileges/", sql.query_privileges.query_priv_modify),

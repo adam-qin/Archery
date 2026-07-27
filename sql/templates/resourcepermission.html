@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="toolbar" class="btn-group">
+    <button class="btn btn-default" data-toggle="modal" data-target="#apply">权限申请</button>
+</div>
+<table id="resource-permission-list" class="table table-striped table-hover"></table>
+<div class="modal fade" id="apply" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document"><div class="modal-content">
+        <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal">&times;</button>
+            <h4>资源权限申请</h4>
+        </div>
+        <div class="modal-body">
+            <div class="form-group"><label>申请标题</label><input id="title" class="form-control" maxlength="50"></div>
+            <div class="form-group"><label>申请理由</label><textarea id="reason" class="form-control" rows="4" maxlength="500"></textarea></div>
+            <div class="form-group"><label>目标资源组</label><select id="group_id" class="selectpicker form-control" data-live-search="true" title="请选择资源组"></select></div>
+        </div>
+        <div class="modal-footer"><button id="submit-apply" class="btn btn-primary">提交</button></div>
+    </div></div>
+</div>
+{% endblock %}
+{% block js %}
+<script>
+function resourcePermissionStatus(value) {
+    var status = {0: '待审核', 1: '审核通过', 2: '审核不通过', 3: '审核取消'};
+    return status[value] || value;
+}
+$(function () {
+    $('#resource-permission-list').bootstrapTable({
+        url: '/resource-permission/apply-list/',
+        method: 'post',
+        toolbar: '#toolbar',
+        pagination: true,
+        sidePagination: 'server',
+        search: true,
+        queryParams: function (params) { return params; },
+        columns: [
+            {field: 'title', title: '标题', formatter: function (value, row) {
+                return '<a href="/resourcepermission/' + row.apply_id + '/">' + $('<div>').text(value).html() + '</a>';
+            }},
+            {field: 'group_name', title: '资源组'},
+            {field: 'user_display', title: '申请人'},
+            {field: 'status', title: '状态', formatter: resourcePermissionStatus},
+            {field: 'create_time', title: '申请时间'}
+        ]
+    });
+    $('#apply').on('show.bs.modal', function () {
+        $('#group_id').empty();
+        $.post('/resource-permission/groups/', function (data) {
+            $.each(data.rows, function (_, group) {
+                $('#group_id').append($('<option>').val(group.group_id).text(group.group_name));
+            });
+            $('#group_id').selectpicker('refresh');
+        });
+    });
+    $('#submit-apply').click(function () {
+        var button = $(this).prop('disabled', true);
+        $.post('/resource-permission/apply/', {
+            title: $('#title').val(),
+            reason: $('#reason').val(),
+            group_id: $('#group_id').val()
+        }).done(function (data) {
+            if (data.status) { alert(data.msg); return; }
+            $('#apply').modal('hide');
+            $('#resource-permission-list').bootstrapTable('refresh');
+        }).fail(function () {
+            alert('提交失败，请稍后重试');
+        }).always(function () {
+            button.prop('disabled', false);
+        });
+    });
+});
+</script>
+{% endblock %}
