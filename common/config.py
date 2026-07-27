@@ -1,4 +1,5 @@
 # -*- coding: UTF-8 -*-
+import base64
 import logging
 import traceback
 
@@ -10,6 +11,17 @@ from sql.models import Config
 from django.db import transaction
 
 logger = logging.getLogger("default")
+
+
+def _looks_like_mirage_ciphertext(value):
+    """Recognize django-mirage-field's URL-safe base64 ciphertext shape."""
+    if len(value) < 24 or len(value) % 4:
+        return False
+    try:
+        decoded = base64.urlsafe_b64decode(value.encode("ascii"))
+    except (UnicodeEncodeError, ValueError):
+        return False
+    return len(decoded) >= 16 and len(decoded) % 16 == 0
 
 
 class SysConfig(object):
@@ -51,10 +63,38 @@ class SysConfig(object):
 
     @staticmethod
     def filter_bool(value: str):
+        if not isinstance(value, str):
+            return value
         if value.lower() == "true":
             return True
         if value.lower() == "false":
             return False
+        return value
+
+    @staticmethod
+    def filter_int(value, default_value=None):
+        """Return a valid integer configuration value or the supplied default.
+
+        EncryptedCharField should decrypt values when the application uses the
+        same Mirage key as the database writer. If a deployment has a key
+        mismatch, Mirage intentionally returns the stored ciphertext instead
+        of raising, so numeric settings must be validated before use.
+        """
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default_value
+
+    @staticmethod
+    def filter_text(value, default_value=""):
+        """Return printable text; never expose an encrypted config value."""
+        if value is None:
+            return default_value
+        if not isinstance(value, str):
+            value = str(value)
+        value = value.strip()
+        if not value or _looks_like_mirage_ciphertext(value):
+            return default_value
         return value
 
     def set(self, key, value):

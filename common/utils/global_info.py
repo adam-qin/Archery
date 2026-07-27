@@ -25,7 +25,9 @@ def global_info(request):
     # 添加公告
     announcement_content_enabled = sys_config.get("announcement_content_enabled", False)
     announcement_content = sys_config.get("announcement_content", "")
-    custom_title_suffix = sys_config.get("custom_title_suffix", "")
+    custom_title_suffix = sys_config.filter_text(
+        sys_config.get("custom_title_suffix", ""), ""
+    )
     if not custom_title_suffix:
         custom_title_suffix = settings.CUSTOM_TITLE_SUFFIX
 

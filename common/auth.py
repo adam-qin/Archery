@@ -85,9 +85,14 @@ class ArcheryAuth(object):
             logger.error(traceback.format_exc())
             return {"status": 1, "msg": f"服务异常，请联系管理员处理", "data": ""}
         # 已存在用户, 验证是否在锁期间
-        # 读取配置文件
-        lock_count = int(self.sys_config.get("lock_cnt_threshold", 5))
-        lock_time = int(self.sys_config.get("lock_time_threshold", 60 * 5))
+        # 读取配置文件。配置表使用加密字段，密钥不一致时会返回密文，
+        # 必须校验类型后再转换，避免配置异常导致整个登录接口 500。
+        lock_count = self.sys_config.filter_int(
+            self.sys_config.get("lock_cnt_threshold", 5), 5
+        )
+        lock_time = self.sys_config.filter_int(
+            self.sys_config.get("lock_time_threshold", 60 * 5), 60 * 5
+        )
         # 验证是否在锁, 分了几个if 防止代码太长
         if user.failed_login_count and user.last_login_failed_at:
             if user.failed_login_count >= lock_count:
