@@ -129,8 +129,10 @@ def authenticate_entry(request):
     if result["status"] == 0:
         authenticated_user = result["data"]
         twofa_enabled = TwoFactorAuthConfig.objects.filter(user=authenticated_user)
-        # 是否开启全局2fa
-        if SysConfig().get("enforce_2fa"):
+        # 是否开启全局2fa。配置值必须明确为 True 才强制开启，
+        # 避免加密字段密钥不一致时返回密文字符串，被 truthy 判断误认为开启。
+        enforce_2fa = SysConfig().get("enforce_2fa", False) is True
+        if enforce_2fa:
             # 用户是否配置过2fa
             if twofa_enabled:
                 verify_mode = "verify_only"
