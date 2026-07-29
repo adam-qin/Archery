@@ -23,6 +23,7 @@ from .models import (
     QueryPrivileges,
     ResourceGroup,
     QueryPrivilegesApply,
+    ResourcePermissionApply,
     Config,
     SQL_WORKFLOW_CHOICES,
     InstanceTag,
@@ -40,7 +41,7 @@ from sql.utils.sql_review import (
     can_view,
     can_rollback,
 )
-from common.utils.const import Const, WorkflowType, WorkflowAction
+from common.utils.const import Const, WorkflowType, WorkflowAction, WorkflowStatus
 from sql.utils.resource_group import user_groups, user_instances
 
 import logging
@@ -341,6 +342,77 @@ def sqlquery(request):
     )
 
 
+@permission_required("sql.resource_permission_apply", raise_exception=True)
+def resource_permission(request):
+    """资源权限申请页面。"""
+    return render(request, "resourcepermission.html")
+
+
+def resource_permission_detail(request, apply_id):
+    """资源权限申请详情页面。"""
+    workflow_detail = get_object_or_404(ResourcePermissionApply, apply_id=apply_id)
+    user = request.user
+    can_view_detail = (
+        user.is_superuser
+        or workflow_detail.user_name == user.username
+        or (
+            user.has_perm("sql.query_review")
+            and user.resource_group.filter(
+                group_id=workflow_detail.group_id,
+                is_deleted=0,
+            ).exists()
+        )
+    )
+    if not can_view_detail:
+        raise PermissionDenied
+
+    audit_handler = AuditV2(workflow=workflow_detail)
+    review_info = audit_handler.get_review_info()
+    try:
+        audit_handler.can_operate(WorkflowAction.PASS, user)
+        is_can_review = True
+    except AuditException:
+        is_can_review = False
+
+    current_reviewers = []
+    for node in review_info.nodes:
+        if not node.is_current_node:
+            continue
+        current_reviewers.extend(
+            node.group.user_set.filter(
+                is_active=1,
+                resource_group__group_id=workflow_detail.group_id,
+            ).distinct()
+        )
+
+    try:
+        audit_detail = Audit.detail_by_workflow_id(
+            workflow_id=apply_id,
+            workflow_type=WorkflowType.RESOURCE_PERMISSION,
+        )
+        last_log = Audit.logs(audit_id=audit_detail.audit_id).latest("id")
+        last_operation_info = last_log.operation_info
+    except Exception as exc:
+        logger.debug(f"资源权限申请{apply_id}无审核日志记录，错误信息{exc}")
+        last_operation_info = ""
+
+    return render(
+        request,
+        "resourcepermissiondetail.html",
+        {
+            "workflow_detail": workflow_detail,
+            "current_reviewers": current_reviewers,
+            "review_info": review_info,
+            "last_operation_info": last_operation_info,
+            "is_can_review": is_can_review,
+            "can_abort": (
+                workflow_detail.status == WorkflowStatus.WAITING
+                and workflow_detail.user_name == user.username
+            ),
+        },
+    )
+
+
 @permission_required("sql.menu_queryapplylist", raise_exception=True)
 def queryapplylist(request):
     """查询权限申请列表页面"""
@@ -606,6 +678,14 @@ def workflowsdetail(request, audit_id):
         return HttpResponseRedirect(
             reverse("sql:archive_detail", args=(audit_detail.workflow_id,))
         )
+    elif audit_detail.workflow_type == WorkflowType.RESOURCE_PERMISSION:
+        return HttpResponseRedirect(
+            reverse(
+                "sql:resource_permission_detail",
+                args=(audit_detail.workflow_id,),
+            )
+        )
+    raise Http404("不支持的工单类型")
 
 
 @permission_required("sql.menu_document", raise_exception=True)

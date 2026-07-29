@@ -14,6 +14,7 @@ class WorkflowType(models.IntegerChoices):
     QUERY = 1, "查询权限申请"
     SQL_REVIEW = 2, "SQL上线申请"
     ARCHIVE = 3, "数据归档申请"
+    RESOURCE_PERMISSION = 4, "资源权限申请"
 
 
 class WorkflowStatus(models.IntegerChoices):

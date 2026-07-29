@@ -295,6 +295,8 @@ class WorkflowAuditMixin:
             return WorkflowType.ARCHIVE
         elif isinstance(self, QueryPrivilegesApply):
             return WorkflowType.QUERY
+        elif isinstance(self, ResourcePermissionApply):
+            return WorkflowType.RESOURCE_PERMISSION
 
     @property
     def workflow_pk_field(self):
@@ -303,6 +305,8 @@ class WorkflowAuditMixin:
         elif isinstance(self, ArchiveConfig):
             return "id"
         elif isinstance(self, QueryPrivilegesApply):
+            return "apply_id"
+        elif isinstance(self, ResourcePermissionApply):
             return "apply_id"
 
     def get_audit(self) -> Optional["WorkflowAudit"]:
@@ -413,6 +417,8 @@ class WorkflowAudit(models.Model):
             return SqlWorkflow.objects.get(id=self.workflow_id)
         elif self.workflow_type == WorkflowType.ARCHIVE:
             return ArchiveConfig.objects.get(id=self.workflow_id)
+        elif self.workflow_type == WorkflowType.RESOURCE_PERMISSION:
+            return ResourcePermissionApply.objects.get(apply_id=self.workflow_id)
         raise ValueError("无法获取到关联工单")
 
     def __int__(self):
@@ -540,6 +546,36 @@ class QueryPrivilegesApply(models.Model, WorkflowAuditMixin):
         db_table = "query_privileges_apply"
         verbose_name = "查询权限申请记录表"
         verbose_name_plural = "查询权限申请记录表"
+
+
+class ResourcePermissionApply(models.Model, WorkflowAuditMixin):
+    """资源组权限申请记录。"""
+
+    apply_id = models.AutoField(primary_key=True)
+    group_id = models.IntegerField("组ID")
+    group_name = models.CharField("组名称", max_length=100)
+    title = models.CharField("申请标题", max_length=50)
+    reason = models.CharField("申请理由", max_length=500, default="")
+    user_name = models.CharField("申请人", max_length=30)
+    user_display = models.CharField("申请人中文名", max_length=50, default="")
+    status = models.IntegerField(
+        "审核状态", choices=WorkflowStatus.choices, default=WorkflowStatus.WAITING
+    )
+    audit_auth_groups = models.CharField("审批权限组列表", max_length=255, default="")
+    create_time = models.DateTimeField(auto_now_add=True)
+    sys_time = models.DateTimeField(auto_now=True)
+
+    def __int__(self):
+        return self.apply_id
+
+    class Meta:
+        managed = True
+        db_table = "resource_permission_apply"
+        verbose_name = "资源权限申请记录表"
+        verbose_name_plural = "资源权限申请记录表"
+        indexes = [
+            models.Index(fields=["user_name", "group_id", "status"]),
+        ]
 
 
 class QueryPrivileges(models.Model):
@@ -962,6 +998,7 @@ class Permission(models.Model):
             ("menu_query", "菜单 SQL查询"),
             ("menu_sqlquery", "菜单 在线查询"),
             ("menu_queryapplylist", "菜单 权限管理"),
+            ("resource_permission_apply", "资源权限申请"),
             ("menu_sqloptimize", "菜单 SQL优化"),
             ("menu_sqladvisor", "菜单 优化工具"),
             ("menu_slowquery", "菜单 慢查日志"),

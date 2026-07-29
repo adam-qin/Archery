@@ -23,6 +23,7 @@ from sql.models import (
     ResourceGroup,
     SqlWorkflow,
     QueryPrivilegesApply,
+    ResourcePermissionApply,
     Users,
     ArchiveConfig,
 )
@@ -130,7 +131,9 @@ SUPPORTED_OPERATION_GRID = {
 @dataclass
 class AuditV2:
     # workflow 对象有可能是还没有在数据库中创建的对象, 这里需要注意
-    workflow: Union[SqlWorkflow, ArchiveConfig, QueryPrivilegesApply] = None
+    workflow: Union[
+        SqlWorkflow, ArchiveConfig, QueryPrivilegesApply, ResourcePermissionApply
+    ] = None
     sys_config: SysConfig = field(default_factory=SysConfig)
     audit: WorkflowAudit = None
     workflow_type: WorkflowType = WorkflowType.SQL_REVIEW
@@ -154,6 +157,9 @@ class AuditV2:
             except ResourceGroup.DoesNotExist:
                 raise AuditException(f"参数错误, 未发现资源组 {self.resource_group}")
         elif isinstance(self.workflow, QueryPrivilegesApply):
+            self.resource_group = self.workflow.group_name
+            self.resource_group_id = self.workflow.group_id
+        elif isinstance(self.workflow, ResourcePermissionApply):
             self.resource_group = self.workflow.group_name
             self.resource_group_id = self.workflow.group_id
         # 该方法可能获取不到相关的审批流, 但是也不要报错, 因为有的时候是新建工单, 此时还没有审批流
@@ -267,7 +273,11 @@ class AuditV2:
         return True
 
     def generate_audit_setting(self) -> AuditSetting:
-        if self.workflow_type in [WorkflowType.SQL_REVIEW, WorkflowType.QUERY]:
+        if self.workflow_type in [
+            WorkflowType.SQL_REVIEW,
+            WorkflowType.QUERY,
+            WorkflowType.RESOURCE_PERMISSION,
+        ]:
             group_id = self.workflow.group_id
         else:
             # ArchiveConfig
@@ -311,6 +321,13 @@ class AuditV2:
             workflow_title = self.workflow.title
             group_id = self.resource_group_id
             group_name = self.resource_group
+            create_user = self.workflow.user_name
+            create_user_display = self.workflow.user_display
+            self.workflow.audit_auth_groups = audit_setting.audit_auth_group_in_db
+        elif self.workflow_type == WorkflowType.RESOURCE_PERMISSION:
+            workflow_title = self.workflow.title
+            group_id = self.workflow.group_id
+            group_name = self.workflow.group_name
             create_user = self.workflow.user_name
             create_user_display = self.workflow.user_display
             self.workflow.audit_auth_groups = audit_setting.audit_auth_group_in_db
@@ -399,6 +416,8 @@ class AuditV2:
             need_user_permission = "sql.sql_review"
         elif self.workflow_type == WorkflowType.ARCHIVE:
             need_user_permission = "sql.archive_review"
+        elif self.workflow_type == WorkflowType.RESOURCE_PERMISSION:
+            need_user_permission = "sql.query_review"
         else:
             raise AuditException(f"不支持的工单类型: {self.workflow_type}")
 
@@ -427,8 +446,10 @@ class AuditV2:
                 raise AuditException(
                     "当前审批权限组不存在, 请联系管理员检查并清洗错误数据"
                 )
-            if not auth_group_users([audit_auth_group.name], self.resource_group_id):
-                raise AuditException("用户不在当前审批审批节点的用户组内, 无权限审核")
+            if not auth_group_users(
+                [audit_auth_group.name], self.resource_group_id
+            ).filter(id=actor.id).exists():
+                raise AuditException("用户不在当前审批节点的用户组内, 无权限审核")
             return True
         if action in [
             WorkflowAction.EXECUTE_START,
@@ -723,6 +744,9 @@ class Audit(object):
             elif workflow_type == 3:
                 workflow = ArchiveConfig.objects.get(id=workflow_id)
                 user = workflow.user_name
+            elif workflow_type == 4:
+                workflow = ResourcePermissionApply.objects.get(apply_id=workflow_id)
+                user = workflow.user_name
             return user
 
         applicant = get_workflow_applicant(workflow_id, workflow_type)
@@ -756,6 +780,9 @@ class Audit(object):
                 elif workflow_type == 3:
                     if user.has_perm("sql.archive_review"):
                         result = True
+                elif workflow_type == 4:
+                    if user.has_perm("sql.query_review"):
+                        result = True
         return result
 
     # 新增工单日志
@@ -787,7 +814,9 @@ class Audit(object):
 
 def get_auditor(
     # workflow 对象有可能是还没有在数据库中创建的对象, 这里需要注意
-    workflow: Union[SqlWorkflow, ArchiveConfig, QueryPrivilegesApply] = None,
+    workflow: Union[
+        SqlWorkflow, ArchiveConfig, QueryPrivilegesApply, ResourcePermissionApply
+    ] = None,
     sys_config: SysConfig = None,
     audit: WorkflowAudit = None,
     workflow_type: WorkflowType = WorkflowType.SQL_REVIEW,

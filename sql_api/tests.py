@@ -625,6 +625,19 @@ class TestWorkflow(APITestCase):
         r = self.client.post("/api/v1/workflow/", json_data, format="json")
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_pass_workflow_without_remark(self):
+        """审核通过允许不填写备注。"""
+        json_data = {
+            "engineer": self.user.username,
+            "workflow_id": self.wf1.id,
+            "audit_remark": "",
+            "workflow_type": self.audit1.workflow_type,
+            "audit_type": "pass",
+        }
+        r = self.client.post("/api/v1/workflow/audit/", json_data, format="json")
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.assertEqual(r.json(), {"msg": "passed"})
+
     def test_audit_workflow(self):
         """测试审核工单"""
         json_data = {

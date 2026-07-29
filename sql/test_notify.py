@@ -491,6 +491,39 @@ class TestNotify(TestCase):
         )
 
 
+def test_qywx_webhook_mentions_sql_review_approvers(
+    mocker: MockFixture, create_audit_workflow, create_resource_group
+):
+    """SQL 工单待审批通知应将当前审批人 userid 写入 Webhook Markdown。"""
+    approver = User.objects.create(
+        username="sql_approver",
+        wx_user_id="wx_sql_approver",
+        is_active=True,
+    )
+    approver.groups.add(Group.objects.get(id=1))
+    create_resource_group.users.add(approver)
+    create_audit_workflow.current_audit = "1"
+    create_audit_workflow.save(update_fields=["current_audit"])
+    create_audit_workflow.get_workflow = Mock(
+        return_value=SqlWorkflow.objects.get(id=create_audit_workflow.workflow_id)
+    )
+    mock_msg_sender = mocker.patch("sql.notify.MsgSender")
+    mock_send = mock_msg_sender.return_value.send_qywx_webhook
+
+    notifier = QywxWebhookNotifier(
+        workflow=None,
+        audit=create_audit_workflow,
+        sys_config=SysConfig(),
+    )
+    notifier.render()
+    notifier.send()
+
+    mock_send.assert_called_once()
+    assert mock_send.call_args.args[0] == create_resource_group.qywx_webhook
+    assert mock_send.call_args.args[1].startswith("[SQL审核]新的工单申请#")
+    assert mock_send.call_args.kwargs["mentioned_users"] == [approver]
+
+
 @pytest.mark.parametrize(
     "notifier_to_test,method_assert_called",
     [

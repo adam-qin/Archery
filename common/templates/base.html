@@ -115,7 +115,7 @@
                             <!-- /.nav-second-level -->
                         </li>
                     {% endif %}
-                    {% if perms.sql.menu_query %}
+                    {% if perms.sql.menu_query or perms.sql.resource_permission_apply %}
                         <li>
                             <a href="#"><i class="fa fa-search fa-fw"></i> SQL查询<span class="fa arrow"></span></a>
                             <ul class="nav nav-second-level collapse">
@@ -132,6 +132,11 @@
                                 {% if perms.sql.menu_queryapplylist %}
                                     <li>
                                         <a href="/queryapplylist/">权限管理</a>
+                                    </li>
+                                {% endif %}
+                                {% if perms.sql.resource_permission_apply %}
+                                    <li>
+                                        <a href="/resourcepermission/">资源权限申请</a>
                                     </li>
                                 {% endif %}
 

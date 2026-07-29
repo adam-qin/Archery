@@ -201,8 +201,29 @@ class MsgSender(object):
                 f"企业微信推送失败\n请求连接:{send_url}\n请求参数:{data}\n请求响应:{r_json}"
             )
 
-    def send_qywx_webhook(self, qywx_webhook, msg):
+    def send_qywx_webhook(self, qywx_webhook, msg, mentioned_users=None):
+        """
+        发送企业微信群机器人 Markdown 消息。
+
+        企业微信机器人 Markdown 不支持 mentioned_list 字段，必须在
+        markdown.content 中使用 <@userid> 扩展语法实现真正的 AT。
+        mentioned_users 可以是 Users 实例，也可以是企业微信 userid 字符串。
+        """
         send_url = qywx_webhook
+        mentioned_users = mentioned_users or []
+        mentioned_user_ids = []
+        for user in mentioned_users:
+            if isinstance(user, str):
+                user_id = user
+            else:
+                user_id = getattr(user, "wx_user_id", None)
+            if user_id and user_id not in mentioned_user_ids:
+                mentioned_user_ids.append(user_id)
+        if mentioned_user_ids:
+            msg = "{}\n请 {} 及时处理。".format(
+                msg,
+                "、".join(f"<@{user_id}>" for user_id in mentioned_user_ids),
+            )
 
         # 对链接进行转换
         _msg = re.findall("https://.+(?=\n)|http://.+(?=\n)", msg)
@@ -215,10 +236,21 @@ class MsgSender(object):
             "msgtype": "markdown",
             "markdown": {"content": msg},
         }
-        res = requests.post(url=send_url, json=data, timeout=5)
-        r_json = res.json()
-        if r_json["errcode"] == 0:
-            logger.debug(f"企业微信机器人推送成功\n通知对象：机器人")
+        try:
+            res = requests.post(url=send_url, json=data, timeout=5)
+            r_json = res.json()
+        except (requests.RequestException, ValueError) as exc:
+            logger.error(
+                "企业微信机器人推送异常\n请求连接:%s\n错误:%s",
+                send_url,
+                exc,
+            )
+            return
+        if r_json.get("errcode") == 0:
+            logger.info(
+                "企业微信机器人推送成功\n通知对象：机器人\nAT对象：%s",
+                mentioned_user_ids or "无",
+            )
         else:
             logger.error(
                 f"企业微信机器人推送失败\n请求连接:{send_url}\n请求参数:{data}\n请求响应:{r_json}"

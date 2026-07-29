@@ -24,6 +24,7 @@ from sql.models import (
     WorkflowAudit,
     WorkflowAuditDetail,
     SqlWorkflowContent,
+    ResourcePermissionApply,
 )
 from sql.utils.resource_group import auth_group_users
 from sql.utils.workflow_audit import Audit, AuditV2
@@ -33,6 +34,7 @@ from sql_api.serializers import (
     QueryPrivilegesApplySerializer,
     ArchiveConfigSerializer,
     InstanceSerializer,
+    ResourcePermissionApplySerializer,
 )
 
 logger = logging.getLogger("default")
@@ -54,9 +56,13 @@ class My2SqlResult:
 
 @dataclass
 class Notifier:
-    workflow: Union[SqlWorkflow, ArchiveConfig, QueryPrivilegesApply, My2SqlResult] = (
-        None
-    )
+    workflow: Union[
+        SqlWorkflow,
+        ArchiveConfig,
+        QueryPrivilegesApply,
+        ResourcePermissionApply,
+        My2SqlResult,
+    ] = None
     sys_config: SysConfig = None
     # init false, class property, 不是 instance property
     name: str = field(init=False, default="base")
@@ -118,6 +124,10 @@ class GenericWebhookNotifier(Notifier):
             self.request_data["workflow_content"] = QueryPrivilegesApplySerializer(
                 self.workflow
             ).data
+        elif isinstance(self.workflow, ResourcePermissionApply):
+            self.request_data["workflow_content"] = ResourcePermissionApplySerializer(
+                self.workflow
+            ).data
         else:
             raise ValueError(f"workflow type `{type(self.workflow)}` not supported yet")
 
@@ -134,6 +144,9 @@ class LegacyMessage:
     msg_content: str
     msg_to: List[Users] = field(default_factory=list)
     msg_cc: List[Users] = field(default_factory=list)
+    # 企业微信群机器人 Markdown 消息中需要被提醒的企业微信用户。
+    # 仅使用 wx_user_id，避免把 Archery 用户名误当成企业微信 userid。
+    mentioned_users: List[Users] = field(default_factory=list)
 
 
 @dataclass
@@ -193,6 +206,15 @@ class LegacyRender(Notifier):
                 workflow_detail.src_table_name,
                 workflow_detail.mode,
                 workflow_detail.condition,
+            )
+        elif workflow_type == WorkflowType.RESOURCE_PERMISSION:
+            workflow_type_display = WorkflowType.RESOURCE_PERMISSION.label
+            workflow_detail = ResourcePermissionApply.objects.get(pk=workflow_id)
+            instance = "-"
+            db_name = "-"
+            workflow_content = """目标资源组：{}\n申请理由：{}\n""".format(
+                workflow_detail.group_name,
+                workflow_detail.reason,
             )
         else:
             raise Exception("工单类型不正确")
@@ -277,7 +299,25 @@ class LegacyRender(Notifier):
         else:
             raise Exception("工单状态不正确")
         logger.info(f"通知Debug{msg_to}")
-        self.messages.append(LegacyMessage(msg_title, msg_content, msg_to))
+        # SQL 工单和资源权限申请通知审批人时，在 Markdown 中真正 AT 对应人员。
+        # WAITING 是当前审批节点；ABORTED 是通知全部审批节点人员。
+        mentioned_users = []
+        if workflow_type in (
+            WorkflowType.SQL_REVIEW,
+            WorkflowType.RESOURCE_PERMISSION,
+        ) and status in (
+            WorkflowStatus.WAITING,
+            WorkflowStatus.ABORTED,
+        ):
+            mentioned_users = list(msg_to)
+        self.messages.append(
+            LegacyMessage(
+                msg_title,
+                msg_content,
+                msg_to,
+                mentioned_users=mentioned_users,
+            )
+        )
 
     def render_execute(self):
         base_url = self.sys_config.get(
@@ -438,11 +478,17 @@ class QywxWebhookNotifier(LegacyRender):
             group_id=self.audit.group_id
         ).qywx_webhook
         if not qywx_webhook:
+            logger.warning(
+                "企业微信群机器人通知跳过：资源组 %s 未配置 qywx_webhook",
+                self.audit.group_id,
+            )
             return
         msg_sender = MsgSender()
         for m in self.messages:
             msg_sender.send_qywx_webhook(
-                qywx_webhook, f"{m.msg_title}\n{m.msg_content}"
+                qywx_webhook,
+                f"{m.msg_title}\n{m.msg_content}",
+                mentioned_users=m.mentioned_users,
             )
 
 
@@ -477,7 +523,11 @@ class MailNotifier(LegacyRender):
 def auto_notify(
     sys_config: SysConfig,
     workflow: Union[
-        SqlWorkflow, ArchiveConfig, QueryPrivilegesApply, My2SqlResult
+        SqlWorkflow,
+        ArchiveConfig,
+        QueryPrivilegesApply,
+        ResourcePermissionApply,
+        My2SqlResult,
     ] = None,
     audit: WorkflowAudit = None,
     audit_detail: WorkflowAuditDetail = None,
@@ -512,6 +562,21 @@ def notify_for_execute(workflow: SqlWorkflow, sys_config: SysConfig = None):
     if not sys_config:
         sys_config = SysConfig()
     auto_notify(workflow=workflow, sys_config=sys_config, event_type=EventType.EXECUTE)
+
+
+def notify_for_resource_permission(
+    workflow_audit: WorkflowAudit,
+    workflow_audit_detail: WorkflowAuditDetail = None,
+):
+    """资源权限申请专用通知入口，保持独立业务语义。"""
+    sys_config = SysConfig()
+    auto_notify(
+        workflow=None,
+        audit=workflow_audit,
+        audit_detail=workflow_audit_detail,
+        sys_config=sys_config,
+        event_type=EventType.AUDIT,
+    )
 
 
 def notify_for_audit(
